@@ -24,7 +24,7 @@ class MeshIdentity(context: Context) {
     val peerId: ByteArray get() =
         MessageDigest.getInstance("SHA-256").digest(noisePublic).copyOfRange(0, 8)
 
-    fun sign(data: ByteArray): ByteArray {
+    fun noisePrivateKey(): ByteArray = noisePrivate.copyOf()\n\n    fun sign(data: ByteArray): ByteArray {
         val signer = Ed25519Signer()
         signer.init(true, Ed25519PrivateKeyParameters(signingPrivate, 0))
         signer.update(data, 0, data.size)
