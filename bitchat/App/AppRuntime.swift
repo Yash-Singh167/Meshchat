@@ -184,7 +184,7 @@ final class AppRuntime: ObservableObject {
         switch newPhase {
         case .background:
             record(.scenePhaseChanged(.background))
-            chatViewModel.handleSceneDidEnterBackground()
+            // BLE lifecycle is owned by the mesh service.
 
         case .active:
             record(.scenePhaseChanged(.active))
