@@ -62,6 +62,7 @@ class NoiseXXSession(
     private var ck: ByteArray
     private var h: ByteArray
     private var key: ByteArray? = null
+    private var handshakeCipher: CipherState? = null
     private var nonceCounter = 0L
     private var state = if (initiator) 0 else 1
 
@@ -172,6 +173,7 @@ class NoiseXXSession(
         val (newCk, newKey) = hkdf(ck, input)
         ck = newCk
         key = newKey
+        handshakeCipher = CipherState(newKey)
         nonceCounter = 0
     }
 
@@ -180,13 +182,13 @@ class NoiseXXSession(
     }
 
     private fun encryptAndHash(plaintext: ByteArray): ByteArray {
-        val ciphertext = if (key == null) plaintext else CipherState(key!!).encrypt(plaintext, h)
+        val ciphertext = if (key == null) plaintext else handshakeCipher!!.encrypt(plaintext, h)
         mixHash(ciphertext)
         return ciphertext
     }
 
     private fun decryptAndHash(ciphertext: ByteArray): ByteArray {
-        val plaintext = if (key == null) ciphertext else CipherState(key!!).decrypt(ciphertext, h)
+        val plaintext = if (key == null) ciphertext else handshakeCipher!!.decrypt(ciphertext, h)
         mixHash(ciphertext)
         return plaintext
     }
@@ -201,6 +203,7 @@ class NoiseXXSession(
             receiveCipher = CipherState(k1)
         }
         key = null
+        handshakeCipher = null
         state = 3
     }
 
