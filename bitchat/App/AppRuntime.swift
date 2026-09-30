@@ -2,7 +2,6 @@ import BitFoundation
 import Combine
 import Foundation
 import SwiftUI
-import Tor
 import UserNotifications
 #if os(iOS)
 import UIKit
@@ -29,23 +28,15 @@ final class AppRuntime: ObservableObject {
     let boardAlertsModel: BoardAlertsModel
     let sharedContentImportModel: SharedContentImportModel
 
-    private let idBridge: NostrIdentityBridge
     private var cancellables = Set<AnyCancellable>()
     private var started = false
-    private var lastNostrRelayConnectedState = false
-    private var didHandleInitialNostrConnection = false
-
-    #if os(iOS)
-    private var didHandleInitialActive = false
-    private var didEnterBackground = false
-    #endif
-
+     
     init(
         keychain: KeychainManagerProtocol = KeychainManager.makeDefault(),
         idBridge: NostrIdentityBridge = NostrIdentityBridge(),
         sharedContentStore: SharedContentStore? = nil
     ) {
-        self.idBridge = idBridge
+        // Identity is still used by the BLE/Noise stack; Nostr is not a runtime transport.
         let conversations = ConversationStore()
         let peerIdentityStore = PeerIdentityStore()
         let locationPresenceStore = LocationPresenceStore()
@@ -119,15 +110,12 @@ final class AppRuntime: ObservableObject {
                 }
             )
         )
-        if chatViewModel.networkActivationAllowed {
-            GeoRelayDirectory.shared.prefetchIfNeeded()
-        }
+        // MeshChat has no Internet/Nostr runtime. BLE is started by the chat bootstrapper.
         bindRuntimeObservers()
         NotificationDelegate.shared.runtime = self
     }
 
     func start() {
-        guard chatViewModel.networkActivationAllowed else { return }
         guard !started else {
             checkForSharedContent()
             return
@@ -136,8 +124,6 @@ final class AppRuntime: ObservableObject {
         started = true
         NotificationDelegate.shared.runtime = self
         VerificationService.shared.configure(with: chatViewModel.meshService)
-        announceInitialTorStatusIfNeeded()
-
         Task(priority: .utility) { [weak self] in
             guard let self else { return }
             let nickname = await MainActor.run { self.chatViewModel.nickname }
@@ -149,8 +135,7 @@ final class AppRuntime: ObservableObject {
             }
         }
 
-        NetworkActivationService.shared.start()
-        GeohashPresenceService.shared.start()
+        // Bluetooth mesh startup is owned by ChatViewModelBootstrapper.
         checkForSharedContent()
         performMediaMaintenance()
 
@@ -200,39 +185,11 @@ final class AppRuntime: ObservableObject {
         switch newPhase {
         case .background:
             record(.scenePhaseChanged(.background))
-            TorManager.shared.setAppForeground(false)
-            TorManager.shared.goDormantOnBackground()
-            chatViewModel.endGeohashSampling()
-            NostrRelayManager.shared.disconnect()
             didEnterBackground = true
 
         case .active:
             guard chatViewModel.networkActivationAllowed else { return }
             record(.scenePhaseChanged(.active))
-            chatViewModel.meshService.startServices()
-            TorManager.shared.setAppForeground(true)
-            let shouldRefreshNostrConnections = didHandleInitialActive && didEnterBackground
-
-            if didHandleInitialActive && didEnterBackground {
-                if TorManager.shared.isAutoStartAllowed() && !TorManager.shared.isReady {
-                    TorManager.shared.ensureRunningOnForeground()
-                }
-            } else {
-                didHandleInitialActive = true
-            }
-
-            didEnterBackground = false
-
-            if shouldRefreshNostrConnections && TorManager.shared.isAutoStartAllowed() {
-                Task.detached {
-                    let _ = await TorManager.shared.awaitReady(timeout: 60)
-                    await MainActor.run {
-                        TorURLSession.shared.rebuild()
-                        NostrRelayManager.shared.resetAllConnections()
-                    }
-                }
-            }
-
             chatViewModel.handleDidBecomeActive()
             checkForSharedContent()
 
@@ -297,13 +254,6 @@ final class AppRuntime: ObservableObject {
 
 private extension AppRuntime {
     func bindRuntimeObservers() {
-        NostrRelayManager.shared.$isConnected
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isConnected in
-                self?.handleNostrRelayConnectionChanged(isConnected)
-            }
-            .store(in: &cancellables)
-
         NotificationCenter.default.publisher(for: .TorWillRestart)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -381,46 +331,6 @@ private extension AppRuntime {
             privateDisplayName: privateConversationModel.selectedHeaderState?.displayName,
             activeChannel: locationChannelsModel.selectedChannel
         )
-    }
-
-    func handleNostrRelayConnectionChanged(_ isConnected: Bool) {
-        record(.nostrRelayConnectionChanged(isConnected))
-
-        let becameConnected = isConnected && !lastNostrRelayConnectedState
-        lastNostrRelayConnectedState = isConnected
-
-        guard chatViewModel.networkActivationAllowed,
-              started,
-              becameConnected else { return }
-
-        let isInitialConnection = !didHandleInitialNostrConnection
-        didHandleInitialNostrConnection = true
-
-        if !chatViewModel.nostrHandlersSetup {
-            chatViewModel.setupNostrMessageHandling()
-            chatViewModel.nostrHandlersSetup = true
-        }
-
-        guard !isInitialConnection else { return }
-
-        chatViewModel.resubscribeCurrentGeohash()
-        chatViewModel.geoChannelCoordinator?.refreshSampling()
-    }
-
-    func announceInitialTorStatusIfNeeded() {
-        if TorManager.shared.torEnforced &&
-            !chatViewModel.torStatusAnnounced &&
-            TorManager.shared.isAutoStartAllowed() {
-            chatViewModel.torStatusAnnounced = true
-            chatViewModel.addGeohashOnlySystemMessage(
-                String(localized: "system.tor.starting", comment: "System message when Tor is starting")
-            )
-        } else if !TorManager.shared.torEnforced && !chatViewModel.torStatusAnnounced {
-            chatViewModel.torStatusAnnounced = true
-            chatViewModel.addGeohashOnlySystemMessage(
-                String(localized: "system.tor.dev_bypass", comment: "System message when Tor bypass is enabled in development")
-            )
-        }
     }
 
     func handleScreenshotCaptured() {
