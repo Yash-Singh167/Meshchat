@@ -177,5 +177,5 @@ data class MeshFragment(
     }
 }
 
-private fun ByteArray.toHex(): String =
+internal fun ByteArray.toHex(): String =
     joinToString("") { "%02x".format(it) }
