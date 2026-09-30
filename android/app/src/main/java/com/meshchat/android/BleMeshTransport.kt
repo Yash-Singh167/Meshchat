@@ -33,7 +33,7 @@ class BleMeshTransport(
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
     private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()
     private val signingKeys = ConcurrentHashMap<String, ByteArray>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private var announcementTask: ScheduledFuture<*>? = null\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
-    private val identity by lazy { MeshIdentity(context) }
+    private val identity by lazy { MeshIdentity(context) }\n    private val noiseSessions by lazy { NoiseSessionManager(context) }\n    private val pendingPrivate = ConcurrentHashMap<String, MutableList<String>>()
     private val localId: ByteArray get() = identity.peerId
 
     private val advertiseCallback = object : AdvertiseCallback() {
@@ -126,6 +126,18 @@ class BleMeshTransport(
         subscribers.clear()
         server?.close()
         server = null
+    }
+
+    fun sendPrivate(peerId: ByteArray, text: String) {
+        if (noiseSessions.isEstablished(peerId)) {
+            sendEncrypted(peerId, text)
+            return
+        }
+        val key = peerId.toHex()
+        pendingPrivate.computeIfAbsent(key) { mutableListOf() }.add(text)
+        val handshake = noiseSessions.initiate(peerId)
+        sendNoisePacket(MeshPacket.TYPE_NOISE_HANDSHAKE, peerId, handshake)
+        onStatus("Starting encrypted session with " + key)
     }
 
     fun send(text: String) {
@@ -234,7 +246,47 @@ class BleMeshTransport(
         sendEncoded(signed, wire)
     }
 
+    private fun handleNoise(packet: MeshPacket) {
+        val peer = packet.senderId
+        if (!packet.isFor(localId)) return
+        if (packet.type == MeshPacket.TYPE_NOISE_HANDSHAKE) {
+            val response = runCatching { noiseSessions.handleHandshake(peer, packet.payload) }.getOrNull()
+            if (response != null) sendNoisePacket(MeshPacket.TYPE_NOISE_HANDSHAKE, peer, response)
+            if (noiseSessions.isEstablished(peer)) {
+                pendingPrivate.remove(peer.toHex())?.forEach { sendEncrypted(peer, it) }
+                onStatus("Encrypted session established with " + peer.toHex())
+            }
+        } else if (packet.type == MeshPacket.TYPE_NOISE_ENCRYPTED) {
+            val plaintext = noiseSessions.decrypt(peer, packet.payload) ?: return
+            onMessage(peer.toHex(), plaintext.toString(Charsets.UTF_8), packet.ttl < MeshPacket.DEFAULT_TTL)
+        }
+    }
+
+    private fun sendNoisePacket(type: Int, peerId: ByteArray, payload: ByteArray) {
+        val packet = MeshPacket(
+            type = type,
+            ttl = MeshPacket.DEFAULT_TTL,
+            timestamp = System.currentTimeMillis(),
+            senderId = localId,
+            recipientId = peerId,
+            payload = payload
+        )
+        val signed = packet.copy(signature = identity.sign(packet.bytesForSigning()))
+        val wire = signed.encode()
+        remember(signed, wire)
+        sendEncoded(signed, wire)
+    }
+
+    private fun sendEncrypted(peerId: ByteArray, text: String) {
+        val ciphertext = noiseSessions.encrypt(peerId, text.toByteArray(Charsets.UTF_8)) ?: return
+        sendNoisePacket(MeshPacket.TYPE_NOISE_ENCRYPTED, peerId, ciphertext)
+    }
+
     private fun deliver(packet: MeshPacket) {
+        if (packet.type == MeshPacket.TYPE_NOISE_HANDSHAKE || packet.type == MeshPacket.TYPE_NOISE_ENCRYPTED) {
+            handleNoise(packet)
+            return
+        }
         if (packet.type == MeshPacket.TYPE_MESSAGE && packet.isFor(localId)) {
             val text = packet.payload.toString(Charsets.UTF_8)
             onMessage(packet.senderId.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
