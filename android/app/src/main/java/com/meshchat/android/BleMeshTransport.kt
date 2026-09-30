@@ -33,7 +33,7 @@ class BleMeshTransport(
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
     private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()
     private val signingKeys = ConcurrentHashMap<String, ByteArray>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private var announcementTask: ScheduledFuture<*>? = null\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
-    private val identity by lazy { MeshIdentity(context) }\n    private val noiseSessions by lazy { NoiseSessionManager(context) }\n    private val pendingPrivate = ConcurrentHashMap<String, MutableList<String>>()
+    private val identity by lazy { MeshIdentity(context) }\n    private val messageStore by lazy { MeshMessageStore(context) }\n    private val noiseSessions by lazy { NoiseSessionManager(context) }\n    private val pendingPrivate = ConcurrentHashMap<String, MutableList<String>>()
     private val localId: ByteArray get() = identity.peerId
 
     private val advertiseCallback = object : AdvertiseCallback() {
@@ -158,7 +158,7 @@ class BleMeshTransport(
         val wire = signed.encode()
         remember(signed, wire)
         sendEncoded(signed, wire)
-        onMessage(localId.toHex(), text, false)
+        messageStore.add(localId.toHex(), text, false)\n        onMessage(localId.toHex(), text, false)
     }
 
     private fun handlePacket(data: ByteArray) {
@@ -289,7 +289,7 @@ class BleMeshTransport(
         }
         if (packet.type == MeshPacket.TYPE_MESSAGE && packet.isFor(localId)) {
             val text = packet.payload.toString(Charsets.UTF_8)
-            onMessage(packet.senderId.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
+            val relayed = packet.ttl < MeshPacket.DEFAULT_TTL\n            messageStore.add(packet.senderId.toHex(), text, relayed)\n            onMessage(packet.senderId.toHex(), text, relayed)
         }
     }
 
