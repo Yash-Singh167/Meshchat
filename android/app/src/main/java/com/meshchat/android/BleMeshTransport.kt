@@ -235,6 +235,7 @@ class BleMeshTransport(
     private fun notifySubscribers(data: ByteArray) {
         val c = server?.getService(SERVICE_UUID)?.getCharacteristic(CHARACTERISTIC_UUID) ?: return
         subscribers.values.forEach { device ->
+            c.value = data
             @Suppress("DEPRECATION")
             server?.notifyCharacteristicChanged(device, c, false)
         }
