@@ -258,7 +258,7 @@ class BleMeshTransport(
             }
         } else if (packet.type == MeshPacket.TYPE_NOISE_ENCRYPTED) {
             val plaintext = noiseSessions.decrypt(peer, packet.payload) ?: return
-            onMessage(peer.toHex(), plaintext.toString(Charsets.UTF_8), packet.ttl < MeshPacket.DEFAULT_TTL)
+            val text = plaintext.toString(Charsets.UTF_8)\n            messageStore.add(peer.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)\n            onMessage(peer.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
         }
     }
 
