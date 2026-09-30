@@ -76,11 +76,17 @@ class BleMeshTransport(
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-            if (newState == BluetoothProfile.STATE_CONNECTED) gatt.discoverServices()
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                @Suppress("DEPRECATION") gatt.requestMtu(517)
+            }
             if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 centrals.remove(gatt.device.address)
                 gatt.close()
             }
+        }
+
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            gatt.discoverServices()
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
@@ -120,13 +126,18 @@ class BleMeshTransport(
     }
 
     fun send(text: String) {
+        val payload = text.toByteArray(Charsets.UTF_8)
+        if (payload.size > 180) {
+            onStatus("Message too large for the current BLE foundation (max 180 UTF-8 bytes)")
+            return
+        }
         val packet = MeshPacket(
             type = MeshPacket.TYPE_MESSAGE,
             ttl = MeshPacket.DEFAULT_TTL,
             timestamp = System.currentTimeMillis(),
             senderId = localId,
             recipientId = MeshPacket.BROADCAST,
-            payload = text.toByteArray(Charsets.UTF_8)
+            payload = payload
         )
         val wire = packet.encode()
         remember(packet, wire)
@@ -224,7 +235,8 @@ class BleMeshTransport(
     private fun notifySubscribers(data: ByteArray) {
         val c = server?.getService(SERVICE_UUID)?.getCharacteristic(CHARACTERISTIC_UUID) ?: return
         subscribers.values.forEach { device ->
-            server?.notifyCharacteristicChanged(device, c, false, data)
+            @Suppress("DEPRECATION")
+            server?.notifyCharacteristicChanged(device, c, false)
         }
     }
 
