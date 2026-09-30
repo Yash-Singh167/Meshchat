@@ -15,7 +15,7 @@ import androidx.core.content.ContextCompat.startForegroundService
 
 class MainActivity : AppCompatActivity() {
     private lateinit var log: TextView
-    private lateinit var input: EditText
+    private lateinit var input: EditText\n    private lateinit var peerInput: EditText
     private var meshService: MeshChatService? = null
     private val permissionRequest = 7001
 
@@ -43,8 +43,7 @@ class MainActivity : AppCompatActivity() {
         log = TextView(this).apply { text = "Starting…\n"; textSize = 14f }
         root.addView(ScrollView(this).apply { addView(log) }, LinearLayout.LayoutParams(-1, 0, 1f))
         input = EditText(this).apply { hint = "Message"; singleLine = true }
-        root.addView(input)
-        root.addView(Button(this).apply {
+        root.addView(input)\n        peerInput = EditText(this).apply { hint = "Peer ID for private chat (16 hex)"; singleLine = true }\n        root.addView(peerInput)\n        root.addView(Button(this).apply {
             text = "SEND OVER BLUETOOTH"
             setOnClickListener {
                 val message = input.text.toString().trim()
