@@ -94,7 +94,7 @@ data class MeshPacket(
 
         const val ID_SIZE = 8
         const val SIGNATURE_SIZE = 64
-        const val HEADER_SIZE = 13
+        const val HEADER_SIZE = 14
         const val SIGNING_TTL = 0
 
         val BROADCAST = ByteArray(ID_SIZE) { 0xFF.toByte() }
@@ -140,27 +140,30 @@ data class MeshFragment(
     val id: Long,
     val index: Int,
     val total: Int,
+    val originalType: Int,
     val data: ByteArray
 ) {
     fun encode(): ByteArray =
-        ByteBuffer.allocate(12 + data.size).order(ByteOrder.BIG_ENDIAN).apply {
+        ByteBuffer.allocate(13 + data.size).order(ByteOrder.BIG_ENDIAN).apply {
             putLong(id)
             putShort(index.toShort())
             putShort(total.toShort())
+            put(originalType.toByte())
             put(data)
         }.array()
 
     companion object {
-        const val HEADER_SIZE = 12
+        const val HEADER_SIZE = 13
         fun decode(payload: ByteArray): MeshFragment? = runCatching {
             if (payload.size < HEADER_SIZE) return null
             val b = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
             val id = b.long
             val index = b.short.toInt() and 0xFFFF
             val total = b.short.toInt() and 0xFFFF
-            if (total !in 1..255 || index !in 0 until total) return null
+            val originalType = b.get().toInt() and 0xFF
+            if (total !in 1..10_000 || index !in 0 until total) return null
             val body = ByteArray(b.remaining()).also(b::get)
-            MeshFragment(id, index, total, body)
+            MeshFragment(id, index, total, originalType, body)
         }.getOrNull()
     }
 }
