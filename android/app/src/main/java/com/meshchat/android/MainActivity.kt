@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity() {
 
         input = EditText(this).apply {
             hint = "Message"
-            singleLine = true
+            setSingleLine(true)
         }
         root.addView(input)
 
