@@ -26,6 +26,16 @@ class MeshIdentity(context: Context) {
 
     fun noisePrivateKey(): ByteArray = noisePrivate.copyOf()
 
+    companion object {
+        fun verify(data: ByteArray, signature: ByteArray, publicKey: ByteArray): Boolean = runCatching {
+            if (signature.size != 64 || publicKey.size != 32) return false
+            val verifier = org.bouncycastle.crypto.signers.Ed25519Signer()
+            verifier.init(false, org.bouncycastle.crypto.params.Ed25519PublicKeyParameters(publicKey, 0))
+            verifier.update(data, 0, data.size)
+            verifier.verifySignature(signature)
+        }.getOrDefault(false)
+    }
+
     fun sign(data: ByteArray): ByteArray {
         val signer = Ed25519Signer()
         signer.init(true, Ed25519PrivateKeyParameters(signingPrivate, 0))
