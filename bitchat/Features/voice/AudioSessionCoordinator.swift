@@ -449,7 +449,7 @@ private struct SystemAudioSession: SessionApplying {
             try session.setCategory(
                 .playAndRecord,
                 mode: .default,
-                options: [.defaultToSpeaker, .allowBluetoothA2DP, .allowBluetoothHFP, .mixWithOthers]
+                options: [.defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth, .mixWithOthers]
             )
             #endif
         }
