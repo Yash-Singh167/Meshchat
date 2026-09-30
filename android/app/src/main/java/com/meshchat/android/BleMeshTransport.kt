@@ -12,7 +12,7 @@ import androidx.core.content.ContextCompat
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID\nimport java.nio.ByteBuffer\nimport kotlin.math.min
-import java.util.concurrent.ConcurrentHashMap\nimport java.util.concurrent.Executors\nimport java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap\nimport java.util.concurrent.Executors\nimport java.util.concurrent.TimeUnit\nimport java.util.concurrent.ScheduledFuture
 
 class BleMeshTransport(
     private val context: Context,
@@ -32,7 +32,7 @@ class BleMeshTransport(
     private val centrals = ConcurrentHashMap<String, BluetoothGatt>()
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
     private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()
-    private val signingKeys = ConcurrentHashMap<String, ByteArray>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
+    private val signingKeys = ConcurrentHashMap<String, ByteArray>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private var announcementTask: ScheduledFuture<*>? = null\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
     private val identity by lazy { MeshIdentity(context) }
     private val localId: ByteArray get() = identity.peerId
 
@@ -115,7 +115,7 @@ class BleMeshTransport(
         openServer()
         startAdvertising()
         startScanning()
-        sendAnnouncement()\n        relayExecutor.scheduleAtFixedRate({ sendAnnouncement() }, 15, 20, TimeUnit.SECONDS)
+        sendAnnouncement()\n        announcementTask = relayExecutor.scheduleAtFixedRate({ sendAnnouncement() }, 15, 20, TimeUnit.SECONDS)
     }
 
     fun stop() {
