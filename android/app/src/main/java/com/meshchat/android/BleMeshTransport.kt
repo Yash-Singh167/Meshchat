@@ -31,7 +31,8 @@ class BleMeshTransport(
     private var server: BluetoothGattServer? = null
     private val centrals = ConcurrentHashMap<String, BluetoothGatt>()
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
-    private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
+    private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()
+    private val signingKeys = ConcurrentHashMap<String, ByteArray>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
     private val identity by lazy { MeshIdentity(context) }
     private val localId: ByteArray get() = identity.peerId
 
@@ -162,6 +163,8 @@ class BleMeshTransport(
         if (packet.type == MeshPacket.TYPE_FRAGMENT) {
             handleFragment(packet, now)
         } else {
+            if (packet.type == MeshPacket.TYPE_ANNOUNCE) rememberAnnouncement(packet)
+            if (packet.type == MeshPacket.TYPE_MESSAGE && !isAuthentic(packet)) return
             deliver(packet)
         }
 
@@ -171,6 +174,35 @@ class BleMeshTransport(
                 sendEncoded(relay, relay.encode())
             }
         }
+    }
+
+    private fun rememberAnnouncement(packet: MeshPacket) {
+        val tlvs = parseTlvs(packet.payload)
+        val signingKey = tlvs[0x03] ?: return
+        if (signingKey.size != 32 || packet.signature == null) return
+        if (!MeshIdentity.verify(packet.bytesForSigning(), packet.signature, signingKey)) return
+        signingKeys[packet.senderId.toHex()] = signingKey
+        onStatus("Peer " + packet.senderId.toHex() + " authenticated")
+    }
+
+    private fun isAuthentic(packet: MeshPacket): Boolean {
+        val signature = packet.signature ?: return false
+        val key = signingKeys[packet.senderId.toHex()] ?: return false
+        return MeshIdentity.verify(packet.bytesForSigning(), signature, key)
+    }
+
+    private fun parseTlvs(payload: ByteArray): Map<Int, ByteArray> {
+        val result = mutableMapOf<Int, ByteArray>()
+        var offset = 0
+        while (offset + 2 <= payload.size) {
+            val type = payload[offset].toInt() and 0xFF
+            val length = payload[offset + 1].toInt() and 0xFF
+            offset += 2
+            if (offset + length > payload.size) break
+            result[type] = payload.copyOfRange(offset, offset + length)
+            offset += length
+        }
+        return result
     }
 
     private fun sendAnnouncement() {
@@ -231,6 +263,8 @@ class BleMeshTransport(
         assemblies.remove(key)
         val original = MeshPacket.decode(reassembled) ?: return
         if (original.type != fragment.originalType) return
+        if (original.type == MeshPacket.TYPE_ANNOUNCE) rememberAnnouncement(original)
+        if (original.type == MeshPacket.TYPE_MESSAGE && !isAuthentic(original)) return
         deliver(original)
     }
 
