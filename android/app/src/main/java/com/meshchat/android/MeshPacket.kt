@@ -60,7 +60,11 @@ data class MeshPacket(
      * invalidating the origin signature.
      */
     fun bytesForSigning(): ByteArray {
-        return copy(signature = null, ttl = SIGNING_TTL).encode()
+        val raw = copy(signature = null, ttl = SIGNING_TTL).encode()
+        val target = optimalPaddingSize(raw.size)
+        val pad = target - raw.size
+        if (pad <= 0 || pad > 255) return raw
+        return raw + ByteArray(pad) { pad.toByte() }
     }
 
     fun relay(): MeshPacket? {
@@ -96,6 +100,11 @@ data class MeshPacket(
         const val SIGNATURE_SIZE = 64
         const val HEADER_SIZE = 14
         const val SIGNING_TTL = 0
+
+        private fun optimalPaddingSize(size: Int): Int {
+            val total = size + 16
+            return listOf(256, 512, 1024, 2048).firstOrNull { total <= it } ?: size
+        }
 
         val BROADCAST = ByteArray(ID_SIZE) { 0xFF.toByte() }
 
