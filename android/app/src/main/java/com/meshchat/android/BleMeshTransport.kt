@@ -12,7 +12,7 @@ import androidx.core.content.ContextCompat
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID\nimport java.nio.ByteBuffer\nimport kotlin.math.min
-import java.util.concurrent.ConcurrentHashMap\nimport java.util.concurrent.Executors
+import java.util.concurrent.ConcurrentHashMap\nimport java.util.concurrent.Executors\nimport java.util.concurrent.TimeUnit
 
 class BleMeshTransport(
     private val context: Context,
@@ -115,7 +115,7 @@ class BleMeshTransport(
         openServer()
         startAdvertising()
         startScanning()
-        sendAnnouncement()
+        sendAnnouncement()\n        relayExecutor.scheduleAtFixedRate({ sendAnnouncement() }, 15, 20, TimeUnit.SECONDS)
     }
 
     fun stop() {
