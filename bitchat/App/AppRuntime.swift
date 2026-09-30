@@ -167,14 +167,12 @@ final class AppRuntime: ObservableObject {
     }
 
     func handleDidBecomeActiveNotification() {
-        guard chatViewModel.networkActivationAllowed else { return }
         chatViewModel.handleDidBecomeActive()
         checkForSharedContent()
     }
 
     #if os(macOS)
     func handleMacDidBecomeActiveNotification() {
-        guard chatViewModel.networkActivationAllowed else { return }
         record(.scenePhaseChanged(.active))
         chatViewModel.handleDidBecomeActive()
         checkForSharedContent()
@@ -186,10 +184,9 @@ final class AppRuntime: ObservableObject {
         switch newPhase {
         case .background:
             record(.scenePhaseChanged(.background))
-            didEnterBackground = true
+            chatViewModel.handleSceneDidEnterBackground()
 
         case .active:
-            guard chatViewModel.networkActivationAllowed else { return }
             record(.scenePhaseChanged(.active))
             chatViewModel.handleDidBecomeActive()
             checkForSharedContent()
@@ -213,7 +210,6 @@ final class AppRuntime: ObservableObject {
         actionIdentifier: String = UNNotificationDefaultActionIdentifier,
         userInfo: [AnyHashable: Any]
     ) {
-        guard chatViewModel.networkActivationAllowed else { return }
         if actionIdentifier == NotificationService.waveActionID {
             chatViewModel.sendMeshWave()
             return
@@ -255,65 +251,16 @@ final class AppRuntime: ObservableObject {
 
 private extension AppRuntime {
     func bindRuntimeObservers() {
-        NotificationCenter.default.publisher(for: .TorWillRestart)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard self?.chatViewModel.networkActivationAllowed == true
-                else { return }
-                self?.record(.torLifecycleChanged(.willRestart))
-                self?.chatViewModel.handleTorWillRestart()
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .TorDidBecomeReady)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard self?.chatViewModel.networkActivationAllowed == true
-                else { return }
-                self?.record(.torLifecycleChanged(.didBecomeReady))
-                self?.chatViewModel.handleTorDidBecomeReady()
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .TorWillStart)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard self?.chatViewModel.networkActivationAllowed == true
-                else { return }
-                self?.record(.torLifecycleChanged(.willStart))
-                self?.chatViewModel.handleTorWillStart()
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .TorBootstrapDidStall)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard self?.chatViewModel.networkActivationAllowed == true
-                else { return }
-                self?.record(.torLifecycleChanged(.bootstrapDidStall))
-                self?.chatViewModel.handleTorBootstrapDidStall()
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .TorUserPreferenceChanged)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                guard self?.chatViewModel.networkActivationAllowed == true
-                else { return }
-                self?.record(.torLifecycleChanged(.preferenceChanged))
-                self?.chatViewModel.handleTorPreferenceChanged(notification)
-            }
-            .store(in: &cancellables)
-
-        #if os(iOS)
+#if os(iOS)
         NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.handleScreenshotCaptured()
             }
             .store(in: &cancellables)
-        #endif
+#endif
     }
+
 
     func checkForSharedContent() {
         let previousID = sharedContentImportModel.offer?.id
