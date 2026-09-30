@@ -44,6 +44,10 @@ jobs:
           test -n "$APP_PATH"
           ditto "$APP_PATH" "ios-artifact/MeshChat.app"
           ditto -c -k --sequesterRsrc --keepParent "ios-artifact/MeshChat.app" "ios-artifact/MeshChat-unsigned.app.zip"
+          mkdir -p ios-artifact/Payload
+          ditto "$APP_PATH" "ios-artifact/Payload/MeshChat.app"
+          (cd ios-artifact && zip -qry "MeshChat-unsigned.ipa" Payload)
+          rm -rf ios-artifact/Payload
 
       - name: Upload iOS build log
         if: always()
@@ -56,4 +60,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MeshChat-iOS-unsigned-app
-          path: ios-artifact/MeshChat-unsigned.app.zip
+          path: |
+            ios-artifact/MeshChat-unsigned.app.zip
+            ios-artifact/MeshChat-unsigned.ipa
