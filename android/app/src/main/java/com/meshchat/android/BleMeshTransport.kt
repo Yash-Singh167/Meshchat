@@ -130,8 +130,8 @@ class BleMeshTransport(
 
     fun send(text: String) {
         val payload = text.toByteArray(Charsets.UTF_8)
-        if (payload.size > 180) {
-            onStatus("Message too large for the current BLE foundation (max 180 UTF-8 bytes)")
+        if (payload.size > 60_000) {
+            onStatus("Message is too large (maximum 60,000 UTF-8 bytes)")
             return
         }
         val packet = MeshPacket(
