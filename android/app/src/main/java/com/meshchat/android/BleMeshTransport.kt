@@ -176,7 +176,7 @@ class BleMeshTransport(
             handleFragment(packet, now)
         } else {
             if (packet.type == MeshPacket.TYPE_ANNOUNCE) rememberAnnouncement(packet)
-            if (packet.type == MeshPacket.TYPE_MESSAGE && !isAuthentic(packet)) return
+            if ((packet.type == MeshPacket.TYPE_MESSAGE || packet.type == MeshPacket.TYPE_NOISE_HANDSHAKE || packet.type == MeshPacket.TYPE_NOISE_ENCRYPTED) && !isAuthentic(packet)) return
             deliver(packet)
         }
 
@@ -316,7 +316,7 @@ class BleMeshTransport(
         val original = MeshPacket.decode(reassembled) ?: return
         if (original.type != fragment.originalType) return
         if (original.type == MeshPacket.TYPE_ANNOUNCE) rememberAnnouncement(original)
-        if (original.type == MeshPacket.TYPE_MESSAGE && !isAuthentic(original)) return
+        if ((original.type == MeshPacket.TYPE_MESSAGE || original.type == MeshPacket.TYPE_NOISE_HANDSHAKE || original.type == MeshPacket.TYPE_NOISE_ENCRYPTED) && !isAuthentic(original)) return
         deliver(original)
     }
 
