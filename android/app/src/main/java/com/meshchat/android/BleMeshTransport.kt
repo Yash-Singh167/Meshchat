@@ -11,8 +11,13 @@ import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.UUID\nimport java.nio.ByteBuffer\nimport kotlin.math.min
-import java.util.concurrent.ConcurrentHashMap\nimport java.util.concurrent.Executors\nimport java.util.concurrent.TimeUnit\nimport java.util.concurrent.ScheduledFuture
+import java.util.UUID
+import java.nio.ByteBuffer
+import kotlin.math.min
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.ScheduledFuture
 
 class BleMeshTransport(
     private val context: Context,
@@ -31,9 +36,18 @@ class BleMeshTransport(
     private var server: BluetoothGattServer? = null
     private val centrals = ConcurrentHashMap<String, BluetoothGatt>()
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
-    private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()
-    private val signingKeys = ConcurrentHashMap<String, ByteArray>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private var announcementTask: ScheduledFuture<*>? = null\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
-    private val identity by lazy { MeshIdentity(context) }\n    private val messageStore by lazy { MeshMessageStore(context) }\n    private val noiseSessions by lazy { NoiseSessionManager(context) }\n    private val pendingPrivate = ConcurrentHashMap<String, MutableList<String>>()
+    private val seen = ConcurrentHashMap<String, Long>()
+    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)
+    private val assemblies = ConcurrentHashMap<String, Assembly>()
+    private val signingKeys = ConcurrentHashMap<String, ByteArray>()
+    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()
+    private var announcementTask: ScheduledFuture<*>? = null
+    private val maxFrameBytes = 500
+    private val fragmentChunkBytes = 450
+    private val identity by lazy { MeshIdentity(context) }
+    private val messageStore by lazy { MeshMessageStore(context) }
+    private val noiseSessions by lazy { NoiseSessionManager(context) }
+    private val pendingPrivate = ConcurrentHashMap<String, MutableList<String>>()
     private val localId: ByteArray get() = identity.peerId
 
     private val advertiseCallback = object : AdvertiseCallback() {
@@ -115,7 +129,8 @@ class BleMeshTransport(
         openServer()
         startAdvertising()
         startScanning()
-        sendAnnouncement()\n        announcementTask = relayExecutor.scheduleAtFixedRate({ sendAnnouncement() }, 15, 20, TimeUnit.SECONDS)
+        sendAnnouncement()
+        announcementTask = relayExecutor.scheduleAtFixedRate({ sendAnnouncement() }, 15, 20, TimeUnit.SECONDS)
     }
 
     fun stop() {
@@ -158,7 +173,8 @@ class BleMeshTransport(
         val wire = signed.encode()
         remember(signed, wire)
         sendEncoded(signed, wire)
-        messageStore.add(localId.toHex(), text, false)\n        onMessage(localId.toHex(), text, false)
+        messageStore.add(localId.toHex(), text, false)
+        onMessage(localId.toHex(), text, false)
     }
 
     private fun handlePacket(data: ByteArray) {
@@ -258,7 +274,9 @@ class BleMeshTransport(
             }
         } else if (packet.type == MeshPacket.TYPE_NOISE_ENCRYPTED) {
             val plaintext = noiseSessions.decrypt(peer, packet.payload) ?: return
-            val text = plaintext.toString(Charsets.UTF_8)\n            messageStore.add(peer.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)\n            onMessage(peer.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
+            val text = plaintext.toString(Charsets.UTF_8)
+            messageStore.add(peer.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
+            onMessage(peer.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
         }
     }
 
@@ -289,7 +307,9 @@ class BleMeshTransport(
         }
         if (packet.type == MeshPacket.TYPE_MESSAGE && packet.isFor(localId)) {
             val text = packet.payload.toString(Charsets.UTF_8)
-            val relayed = packet.ttl < MeshPacket.DEFAULT_TTL\n            messageStore.add(packet.senderId.toHex(), text, relayed)\n            onMessage(packet.senderId.toHex(), text, relayed)
+            val relayed = packet.ttl < MeshPacket.DEFAULT_TTL
+            messageStore.add(packet.senderId.toHex(), text, relayed)
+            onMessage(packet.senderId.toHex(), text, relayed)
         }
     }
 
