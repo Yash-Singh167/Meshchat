@@ -11,8 +11,8 @@ import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID\nimport java.nio.ByteBuffer\nimport kotlin.math.min
+import java.util.concurrent.ConcurrentHashMap\nimport java.util.concurrent.Executors
 
 class BleMeshTransport(
     private val context: Context,
@@ -31,7 +31,7 @@ class BleMeshTransport(
     private var server: BluetoothGattServer? = null
     private val centrals = ConcurrentHashMap<String, BluetoothGatt>()
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
-    private val seen = ConcurrentHashMap<String, Long>()
+    private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
     private val localId by lazy { loadPeerId() }
 
     private val advertiseCallback = object : AdvertiseCallback() {
@@ -141,8 +141,7 @@ class BleMeshTransport(
         )
         val wire = packet.encode()
         remember(packet, wire)
-        writeToCentrals(wire)
-        notifySubscribers(wire)
+        sendEncoded(packet, wire)
         onMessage(localId.toHex(), text, false)
     }
 
@@ -150,20 +149,99 @@ class BleMeshTransport(
         val packet = MeshPacket.decode(data) ?: return
         val now = SystemClock.elapsedRealtime()
         pruneSeen(now)
-        val key = packetKey(packet, data)
+        pruneAssemblies(now)
+        val key = MeshPacket.dedupKey(packet, data)
         if (seen.putIfAbsent(key, now) != null) return
 
-        if (packet.type == MeshPacket.TYPE_MESSAGE &&
-            (packet.recipientId == null || packet.recipientId.contentEquals(MeshPacket.BROADCAST))
-        ) {
-            onMessage(packet.senderId.toHex(), packet.payload.toString(Charsets.UTF_8),
-                packet.ttl < MeshPacket.DEFAULT_TTL)
+        // Fragments are themselves routable packets. Relay the fragment first,
+        // then assemble locally. The original packet is only delivered after
+        // all pieces are present, preventing partial application delivery.
+        if (packet.type == MeshPacket.TYPE_FRAGMENT) {
+            handleFragment(packet, now)
+        } else {
+            deliver(packet)
         }
 
         packet.relay()?.let { relay ->
-            val wire = relay.encode()
+            if (relay.type == MeshPacket.TYPE_FRAGMENT || relay.isBroadcast() ||
+                relay.recipientId?.contentEquals(localId) == false) {
+                sendEncoded(relay, relay.encode())
+            }
+        }
+    }
+
+    private fun deliver(packet: MeshPacket) {
+        if (packet.type == MeshPacket.TYPE_MESSAGE && packet.isFor(localId)) {
+            val text = packet.payload.toString(Charsets.UTF_8)
+            onMessage(packet.senderId.toHex(), text, packet.ttl < MeshPacket.DEFAULT_TTL)
+        }
+    }
+
+    private fun handleFragment(packet: MeshPacket, now: Long) {
+        val fragment = MeshFragment.decode(packet.payload) ?: return
+        val key = packet.senderId.toHex() + ":" + fragment.id
+        val assembly = assemblies.compute(key) { _, existing ->
+            val a = existing ?: Assembly(fragment.total, fragment.originalType, mutableMapOf(), now)
+            if (a.total != fragment.total || a.originalType != fragment.originalType) return@compute null
+            if (a.pieces.size < 10_000) a.pieces.putIfAbsent(fragment.index, fragment.data)
+            a.updatedAt = now
+            a
+        } ?: return
+        if (assembly.pieces.size != assembly.total) return
+
+        val reassembled = ByteArray(assembly.pieces.values.sumOf { it.size })
+        var offset = 0
+        for (i in 0 until assembly.total) {
+            val piece = assembly.pieces[i] ?: run { return }
+            piece.copyInto(reassembled, offset)
+            offset += piece.size
+        }
+        assemblies.remove(key)
+        val original = MeshPacket.decode(reassembled) ?: return
+        if (original.type != fragment.originalType) return
+        deliver(original)
+    }
+
+    private fun pruneAssemblies(now: Long) {
+        assemblies.entries.removeIf { now - it.value.updatedAt > 30_000L }
+    }
+
+    private fun sendEncoded(packet: MeshPacket, wire: ByteArray) {
+        if (wire.size <= maxFrameBytes) {
             writeToCentrals(wire)
             notifySubscribers(wire)
+            return
+        }
+        // Fragment the complete encoded packet exactly as iOS does: each
+        // fragment payload begins with 8-byte stream ID, index, total and
+        // original packet type, followed by a raw slice of the encoded packet.
+        val streamId = ByteBuffer.allocate(8).putLong(SecureRandom().nextLong()).array()
+        val total = (wire.size + fragmentChunkBytes - 1) / fragmentChunkBytes
+        require(total <= 10_000)
+        for (index in 0 until total) {
+            val start = index * fragmentChunkBytes
+            val end = minOf(start + fragmentChunkBytes, wire.size)
+            val fragment = MeshFragment(
+                id = ByteBuffer.wrap(streamId).long,
+                index = index,
+                total = total,
+                originalType = packet.type,
+                data = wire.copyOfRange(start, end)
+            )
+            val fragmentPacket = MeshPacket(
+                version = 1,
+                type = MeshPacket.TYPE_FRAGMENT,
+                ttl = packet.ttl,
+                timestamp = packet.timestamp,
+                senderId = packet.senderId,
+                recipientId = packet.recipientId,
+                payload = fragment.encode(),
+                signature = null
+            )
+            val fragmentWire = fragmentPacket.encode()
+            remember(fragmentPacket, fragmentWire)
+            writeToCentrals(fragmentWire)
+            notifySubscribers(fragmentWire)
         }
     }
 
