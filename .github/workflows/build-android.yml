@@ -6,6 +6,9 @@ on:
       - meshchat/bluetooth-only-foundation
   workflow_dispatch:
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,13 +21,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Configure preinstalled Android SDK
-        run: |
-          export ANDROID_HOME="/usr/local/lib/android/sdk"
-          echo "$ANDROID_HOME/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
