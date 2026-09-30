@@ -69,7 +69,7 @@ class BleMeshTransport(
     private val serverCallback = object : BluetoothGattServerCallback() {
         override fun onDescriptorWriteRequest(
             device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
-            preparedWrite: Boolean, responseNeeded: Boolean, value: ByteArray
+            preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray
         ) {
             if (descriptor.uuid == CCCD_UUID &&
                 value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
