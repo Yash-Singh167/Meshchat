@@ -32,7 +32,8 @@ class BleMeshTransport(
     private val centrals = ConcurrentHashMap<String, BluetoothGatt>()
     private val subscribers = ConcurrentHashMap<String, BluetoothDevice>()
     private val seen = ConcurrentHashMap<String, Long>()\n    private data class Assembly(val total: Int, val originalType: Int, val pieces: MutableMap<Int, ByteArray>, var updatedAt: Long)\n    private val assemblies = ConcurrentHashMap<String, Assembly>()\n    private val relayExecutor = Executors.newSingleThreadScheduledExecutor()\n    private val maxFrameBytes = 500\n    private val fragmentChunkBytes = 450
-    private val localId by lazy { loadPeerId() }
+    private val identity by lazy { MeshIdentity(context) }
+    private val localId: ByteArray get() = identity.peerId
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) { onStatus("Advertising") }
@@ -113,6 +114,7 @@ class BleMeshTransport(
         openServer()
         startAdvertising()
         startScanning()
+        sendAnnouncement()
     }
 
     fun stop() {
@@ -139,9 +141,10 @@ class BleMeshTransport(
             recipientId = MeshPacket.BROADCAST,
             payload = payload
         )
-        val wire = packet.encode()
-        remember(packet, wire)
-        sendEncoded(packet, wire)
+        val signed = packet.copy(signature = identity.sign(packet.bytesForSigning()))
+        val wire = signed.encode()
+        remember(signed, wire)
+        sendEncoded(signed, wire)
         onMessage(localId.toHex(), text, false)
     }
 
@@ -168,6 +171,35 @@ class BleMeshTransport(
                 sendEncoded(relay, relay.encode())
             }
         }
+    }
+
+    private fun sendAnnouncement() {
+        val nickname = "MeshChat"
+        val nicknameBytes = nickname.toByteArray(Charsets.UTF_8)
+        val payload = ByteArray(2 + nicknameBytes.size + 2 + identity.noisePublic.size + 2 + identity.signingPublic.size).also { out ->
+            var p = 0
+            fun putTlv(type: Int, value: ByteArray) {
+                out[p++] = type.toByte()
+                out[p++] = value.size.toByte()
+                value.copyInto(out, p)
+                p += value.size
+            }
+            putTlv(0x01, nicknameBytes)
+            putTlv(0x02, identity.noisePublic)
+            putTlv(0x03, identity.signingPublic)
+        }
+        val packet = MeshPacket(
+            type = MeshPacket.TYPE_ANNOUNCE,
+            ttl = MeshPacket.DEFAULT_TTL,
+            timestamp = System.currentTimeMillis(),
+            senderId = localId,
+            recipientId = null,
+            payload = payload
+        )
+        val signed = packet.copy(signature = identity.sign(packet.bytesForSigning()))
+        val wire = signed.encode()
+        remember(signed, wire)
+        sendEncoded(signed, wire)
     }
 
     private fun deliver(packet: MeshPacket) {
