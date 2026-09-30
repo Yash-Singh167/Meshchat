@@ -1,0 +1,59 @@
+name: Build iOS MeshChat
+
+on:
+  push:
+    branches:
+      - meshchat/bluetooth-only-foundation
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project "bitchat.xcodeproj" \
+            -scheme "bitchat (iOS)"
+
+      - name: Build iOS device app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "bitchat.xcodeproj" \
+            -scheme "bitchat (iOS)" \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | tee ios-build.log
+
+      - name: Package unsigned iOS app
+        run: |
+          mkdir -p ios-artifact
+          APP_PATH="$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Debug-iphoneos/*.app" -type d -name "*.app" | head -n 1)"
+          test -n "$APP_PATH"
+          ditto "$APP_PATH" "ios-artifact/MeshChat.app"
+          ditto -c -k --sequesterRsrc --keepParent "ios-artifact/MeshChat.app" "ios-artifact/MeshChat-unsigned.app.zip"
+
+      - name: Upload iOS build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeshChat-iOS-build-log
+          path: ios-build.log
+
+      - name: Upload unsigned iOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeshChat-iOS-unsigned-app
+          path: ios-artifact/MeshChat-unsigned.app.zip
