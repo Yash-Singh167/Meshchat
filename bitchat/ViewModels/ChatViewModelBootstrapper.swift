@@ -28,10 +28,11 @@ struct ChatViewModelServiceBundle {
             idBridge: idBridge,
             identityManager: identityManager
         )
-        let nostrTransport = NostrTransport(keychain: keychain, idBridge: idBridge)
-        nostrTransport.senderPeerID = meshService.myPeerID
+        // MeshChat is intentionally Bluetooth-only. Keep the router bound
+        // to the BLE mesh transport so messages can never fall through to
+        // an Internet/Nostr transport.
         let messageRouter = MessageRouter(
-            transports: [meshService, nostrTransport],
+            transports: [meshService],
             outboxStore: outboxStore,
             metrics: sfMetrics
         )
@@ -75,11 +76,8 @@ final class ChatViewModelBootstrapper {
         bindPeerService()
         configureNoiseCallbacks()
         bindTransferProgress()
-        configureGeoChannels()
-        configureGateway()
-        configureBridge()
-        configureBridgeCourier()
-        bindTeleportState()
+        // MeshChat deliberately does not configure the Nostr-backed
+        // geochannel, gateway, bridge, or courier paths.
         requestNotifications()
         registerObservers()
     }
@@ -199,7 +197,6 @@ private extension ChatViewModelBootstrapper {
             viewModel.updateBluetoothState(radio.getCurrentBluetoothState())
         }
 
-        viewModel.nostrRelayManager = NostrRelayManager.shared
         viewModel.messageRouter.flushAllOutbox()
 
         Task { @MainActor [weak viewModel] in
