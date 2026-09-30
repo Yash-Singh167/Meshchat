@@ -134,6 +134,8 @@ class BleMeshTransport(
     }
 
     fun stop() {
+        announcementTask?.cancel(false)
+        announcementTask = null
         if (hasScanPermission()) scanner?.stopScan(scanCallback)
         if (hasAdvertisePermission()) advertiser?.stopAdvertising(advertiseCallback)
         centrals.values.forEach { it.close() }
