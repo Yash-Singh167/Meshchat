@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
 
         peerInput = EditText(this).apply {
             hint = "Peer ID for private chat (16 hex)"
-            singleLine = true
+            setSingleLine(true)
         }
         root.addView(peerInput)
 
