@@ -23,7 +23,7 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             meshService = (binder as MeshChatService.LocalBinder).service()
             meshService?.onEvent = { event -> runOnUiThread { append(event) } }
-            append("• Mesh service connected")
+            append("• Mesh service connected")\n            meshService?.recentMessages()?.forEach { append(it) }
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             meshService = null
