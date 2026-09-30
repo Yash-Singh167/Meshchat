@@ -37,7 +37,7 @@ class MeshChatService : Service() {
         transport?.start()
     }
 
-    fun sendMessage(text: String) {
+    fun sendPrivate(peerHex: String, text: String) {\n        val peer = peerHex.chunked(2).mapNotNull { it.toIntOrNull(16)?.toByte() }.toByteArray()\n        if (peer.size == 8) transport?.sendPrivate(peer, text)\n        else onEvent?.invoke("• Invalid peer ID; use 16 hex characters")\n    }\n\n    fun sendMessage(text: String) {
         transport?.send(text)
     }
 
