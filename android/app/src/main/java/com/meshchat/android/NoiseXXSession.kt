@@ -211,8 +211,8 @@ class NoiseXXSession(
             val cipher = ChaCha20Poly1305()
             val out = ByteArray(plaintext.size + TAG_LEN)
             cipher.init(true, AEADParameters(KeyParameter(key), 128, nonce(nonce++), aad))
-            cipher.processBytes(plaintext, 0, plaintext.size, out, 0)
-            cipher.doFinal(out, plaintext.size)
+            val n = cipher.processBytes(plaintext, 0, plaintext.size, out, 0)
+            cipher.doFinal(out, n)
             return out
         }
 
